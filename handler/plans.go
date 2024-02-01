@@ -4,6 +4,10 @@ import (
 	"BigData/models"
 	"BigData/service"
 	ut "BigData/utils"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	log "github.com/sirupsen/logrus"
@@ -42,6 +46,8 @@ func (ph *PlansHandler) CreatePlan(c *gin.Context) {
 	}
 
 	ut.PrettyPrints(planRequest)
+	eTag := generateETag(planRequest)
+	c.Header("ETag", eTag)
 	c.JSON(http.StatusCreated, gin.H{"message": "Plan created successfully"})
 	return
 }
@@ -52,11 +58,18 @@ func (ph *PlansHandler) GetPlan(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	clientEtag := c.GetHeader("If-None-Match")
 
 	plan, err := ph.service.GetPlan(c, objectId)
 	if err != nil {
 		log.Printf("Failed to fetch plan with err : %v", err.Error())
 		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	currentEtag := generateETag(plan)
+	if clientEtag == currentEtag {
+		c.Status(http.StatusNotModified)
 		return
 	}
 
@@ -78,7 +91,7 @@ func (ph *PlansHandler) DeletePlan(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Plan deleted successfully"})
+	c.Status(204)
 	return
 }
 
@@ -92,4 +105,17 @@ func (ph *PlansHandler) GetAllPlans(c *gin.Context) {
 
 	c.JSON(http.StatusOK, plans)
 	return
+}
+
+func generateETag(plan models.Plan) string {
+	h := sha1.New()
+	dataBytes, err := json.Marshal(plan)
+	if err != nil {
+		log.Printf("Error marshalling the plan struct : %v", err)
+		return ""
+	}
+	h.Write(dataBytes)
+	sha1Hash := hex.EncodeToString(h.Sum(nil))
+
+	return fmt.Sprintf("\"%s\"", sha1Hash)
 }
