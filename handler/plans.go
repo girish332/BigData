@@ -17,6 +17,8 @@ import (
 type Handler interface {
 	CreatePlan(c *gin.Context)
 	GetPlan(c *gin.Context)
+	GetAllPlans(c *gin.Context)
+	DeletePlan(c *gin.Context)
 }
 
 type PlansHandler struct {
@@ -87,7 +89,7 @@ func (ph *PlansHandler) DeletePlan(c *gin.Context) {
 	err := ph.service.DeletePlan(c, objectId)
 	if err != nil {
 		log.Printf("Failed to delete plan with err : %v", err.Error())
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
