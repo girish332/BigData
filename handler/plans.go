@@ -3,15 +3,14 @@ package handler
 import (
 	"BigData/models"
 	"BigData/service"
-	ut "BigData/utils"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"strings"
 )
 
 type Handler interface {
@@ -19,6 +18,7 @@ type Handler interface {
 	GetPlan(c *gin.Context)
 	GetAllPlans(c *gin.Context)
 	DeletePlan(c *gin.Context)
+	PatchPlan(c *gin.Context)
 }
 
 type PlansHandler struct {
@@ -40,6 +40,13 @@ func (ph *PlansHandler) CreatePlan(c *gin.Context) {
 		return
 	}
 
+	// Check if a plan with the same objectId already exists
+	existingPlan, err := ph.service.GetPlan(c, planRequest.ObjectId)
+	if err == nil && existingPlan.ObjectId != "" {
+		c.AbortWithStatus(http.StatusConflict)
+		return
+	}
+
 	err = ph.service.CreatePlan(c, planRequest)
 	if err != nil {
 		log.Printf("Failed to create plan with error : %v", err.Error())
@@ -47,7 +54,7 @@ func (ph *PlansHandler) CreatePlan(c *gin.Context) {
 		return
 	}
 
-	ut.PrettyPrints(planRequest)
+	//ut.PrettyPrints(planRequest)
 	eTag := generateETag(planRequest)
 	c.Header("ETag", eTag)
 	c.JSON(http.StatusCreated, gin.H{"message": "Plan created successfully"})
@@ -60,7 +67,7 @@ func (ph *PlansHandler) GetPlan(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-	clientEtag := c.GetHeader("If-None-Match")
+	clientEtag := strings.TrimSpace(c.GetHeader("If-None-Match"))
 
 	plan, err := ph.service.GetPlan(c, objectId)
 	if err != nil {
@@ -88,12 +95,17 @@ func (ph *PlansHandler) DeletePlan(c *gin.Context) {
 
 	err := ph.service.DeletePlan(c, objectId)
 	if err != nil {
+		if err.Error() == "key not found" {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
 		log.Printf("Failed to delete plan with err : %v", err.Error())
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
 	c.Status(204)
+	log.Printf("Plan with objectId : %s deleted successfully", objectId)
 	return
 }
 
@@ -109,6 +121,38 @@ func (ph *PlansHandler) GetAllPlans(c *gin.Context) {
 	return
 }
 
+func (ph *PlansHandler) PatchPlan(c *gin.Context) {
+	objectId, ok := c.Params.Get("objectId")
+	if !ok {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	var planRequest models.Plan
+	err := c.ShouldBindBodyWith(&planRequest, binding.JSON)
+	if err != nil {
+		log.Printf("Bad Request with error : %v", err.Error())
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	existingPlan, err := ph.service.GetPlan(c, objectId)
+	if err != nil || existingPlan.ObjectId == "" {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	err = ph.service.PatchPlan(c, objectId, planRequest)
+	if err != nil {
+		log.Printf("Failed to update plan with error : %v", err.Error())
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Plan updated successfully"})
+	return
+}
+
 func generateETag(plan models.Plan) string {
 	h := sha1.New()
 	dataBytes, err := json.Marshal(plan)
@@ -119,5 +163,5 @@ func generateETag(plan models.Plan) string {
 	h.Write(dataBytes)
 	sha1Hash := hex.EncodeToString(h.Sum(nil))
 
-	return fmt.Sprintf("\"%s\"", sha1Hash)
+	return sha1Hash
 }

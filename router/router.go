@@ -3,6 +3,7 @@ package router
 import (
 	"BigData/database"
 	"BigData/handler"
+	"BigData/middleware"
 	"BigData/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -17,10 +18,14 @@ func InitializeRouter() *gin.Engine {
 	planService := service.NewPlansService(redisRepo)
 	planHandler := handler.NewPlansHandler(planService)
 
-	router.POST("/v1/plan", planHandler.CreatePlan)
-	router.GET("/v1/plan/:objectId", planHandler.GetPlan)
-	router.DELETE("/v1/plan/:objectId", planHandler.DeletePlan)
-	router.GET("/v1/plans", planHandler.GetAllPlans)
+	v1 := router.Group("/v1", middleware.OAuth2Middleware())
+	{
+		v1.POST("/plan", planHandler.CreatePlan)
+		v1.GET("/plan/:objectId", planHandler.GetPlan)
+		v1.DELETE("/plan/:objectId", planHandler.DeletePlan)
+		v1.GET("/plans", planHandler.GetAllPlans)
+		v1.PATCH("/plan/:objectId", planHandler.PatchPlan)
+	}
 
 	return router
 }

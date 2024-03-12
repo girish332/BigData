@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
 	goredis "github.com/redis/go-redis/v9"
 	"time"
@@ -44,9 +45,12 @@ func (repo *RedisRepo) Ping(ctx *gin.Context) error {
 }
 
 func (repo *RedisRepo) Delete(ctx *gin.Context, key string) error {
-	_, err := repo.client.Del(ctx, key).Result()
+	res, err := repo.client.Del(ctx, key).Result()
 	if err != nil {
 		return err
+	}
+	if res == 0 {
+		return errors.New("key not found")
 	}
 	return nil
 }
