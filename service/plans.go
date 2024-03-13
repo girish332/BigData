@@ -138,27 +138,13 @@ func (ps *PlansService) GetAllPlans(ctx *gin.Context) ([]models.Plan, error) {
 
 		var plan models.Plan
 		err = json.Unmarshal([]byte(value), &plan)
-		if err == nil && plan.ObjectId != "" {
+		if err != nil {
+			log.Printf("Error unmarshalling the plan from the redis : %v", err)
+			continue
+		}
+
+		if plan.ObjectId != "" && plan.ObjectType != "" && plan.PlanCostShares.ObjectId != "" {
 			plans = append(plans, plan)
-			continue
-		}
-
-		var linkedPlanService models.LinkedPlanService
-		err = json.Unmarshal([]byte(value), &linkedPlanService)
-		if err == nil && linkedPlanService.ObjectId != "" {
-			continue
-		}
-
-		var linkedService models.LinkedService
-		err = json.Unmarshal([]byte(value), &linkedService)
-		if err == nil && linkedService.ObjectId != "" {
-			continue
-		}
-
-		var planServiceCostShares models.PlanServiceCostShares
-		err = json.Unmarshal([]byte(value), &planServiceCostShares)
-		if err == nil && planServiceCostShares.ObjectId != "" {
-			continue
 		}
 	}
 

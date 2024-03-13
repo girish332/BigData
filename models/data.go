@@ -40,3 +40,42 @@ type Plan struct {
 	CreationDate       string              `json:"creationDate" binding:"required"`
 	Org                string              `json:"_org" binding:"required"`
 }
+
+func (plan *Plan) UpdatePlan(updatedPlan Plan) {
+	plan.PlanCostShares = updatedPlan.PlanCostShares
+	plan.LinkedPlanServices = updatedPlan.LinkedPlanServices
+	plan.PlanType = updatedPlan.PlanType
+	plan.CreationDate = updatedPlan.CreationDate
+	plan.Org = updatedPlan.Org
+}
+
+func (l *LinkedPlanService) UpdateLinkedPlanService(updatedLinkedPlanService LinkedPlanService) {
+	l.LinkedService = updatedLinkedPlanService.LinkedService
+	l.PlanServiceCostShares = updatedLinkedPlanService.PlanServiceCostShares
+	l.ObjectId = updatedLinkedPlanService.ObjectId
+	l.ObjectType = updatedLinkedPlanService.ObjectType
+	l.Org = updatedLinkedPlanService.Org
+}
+
+func (p *PlanCostShares) UpdatePlanCostShares(updatedPlanCostShares PlanCostShares) {
+	p.Deductible = updatedPlanCostShares.Deductible
+	p.Copay = updatedPlanCostShares.Copay
+	p.ObjectId = updatedPlanCostShares.ObjectId
+	p.ObjectType = updatedPlanCostShares.ObjectType
+	p.Org = updatedPlanCostShares.Org
+}
+
+func (p *LinkedService) UpdateLinkedService(updatedLinkedService LinkedService) {
+	p.ObjectId = updatedLinkedService.ObjectId
+	p.ObjectType = updatedLinkedService.ObjectType
+	p.Name = updatedLinkedService.Name
+	p.Org = updatedLinkedService.Org
+}
+
+func (p *PlanServiceCostShares) UpdatePlanServiceCostShares(updatedPlanServiceCostShares PlanServiceCostShares) {
+	p.Deductible = updatedPlanServiceCostShares.Deductible
+	p.Copay = updatedPlanServiceCostShares.Copay
+	p.ObjectId = updatedPlanServiceCostShares.ObjectId
+	p.ObjectType = updatedPlanServiceCostShares.ObjectType
+	p.Org = updatedPlanServiceCostShares.Org
+}
