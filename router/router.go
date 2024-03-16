@@ -25,6 +25,7 @@ func InitializeRouter() *gin.Engine {
 		v1.DELETE("/plan/:objectId", planHandler.DeletePlan)
 		v1.GET("/plans", planHandler.GetAllPlans)
 		v1.PATCH("/plan/:objectId", planHandler.PatchPlan)
+		v1.PUT("/plan", planHandler.UpdatePlan)
 	}
 
 	return router

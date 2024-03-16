@@ -21,9 +21,10 @@ func NewPlansService(repo repository.RedisRepo) *PlansService {
 type Service interface {
 	GetPlan(c *gin.Context, key string) (models.Plan, error)
 	CreatePlan(c *gin.Context, plan models.Plan) error
-	DeletePlan(c *gin.Context, key string) error
+	DeletePlan(c *gin.Context, objectId string) error
 	GetAllPlans(ctx *gin.Context) ([]models.Plan, error)
 	PatchPlan(c *gin.Context, key string, plan models.Plan) error
+	UpdatePlan(c *gin.Context, objectId string, plan models.Plan) error
 }
 
 func (ps *PlansService) GetPlan(c *gin.Context, key string) (models.Plan, error) {
@@ -112,11 +113,50 @@ func (ps *PlansService) CreatePlan(c *gin.Context, plan models.Plan) error {
 	return nil
 }
 
-func (ps *PlansService) DeletePlan(c *gin.Context, key string) error {
-	err := ps.repo.Delete(c, key)
+func (ps *PlansService) DeletePlan(c *gin.Context, objectId string) error {
+	// Fetch the plan
+	plan, err := ps.GetPlan(c, objectId)
+	if err != nil {
+		log.Printf("Error getting the plan from the redis : %v", err)
+		return err
+	}
+
+	// Delete the plan
+	err = ps.repo.Delete(c, objectId)
 	if err != nil {
 		log.Printf("Error deleting the plan from the redis : %v", err)
 		return err
+	}
+
+	// Delete the PlanCostShares
+	err = ps.repo.Delete(c, plan.PlanCostShares.ObjectId)
+	if err != nil {
+		log.Printf("Error deleting the PlanCostShares from the redis : %v", err)
+		return err
+	}
+
+	// Delete each LinkedPlanService and its related objects
+	for _, linkedPlanService := range plan.LinkedPlanServices {
+		// Delete the LinkedPlanService
+		err = ps.repo.Delete(c, linkedPlanService.ObjectId)
+		if err != nil {
+			log.Printf("Error deleting the LinkedPlanService from the redis : %v", err)
+			return err
+		}
+
+		// Delete the LinkedService
+		err = ps.repo.Delete(c, linkedPlanService.LinkedService.ObjectId)
+		if err != nil {
+			log.Printf("Error deleting the LinkedService from the redis : %v", err)
+			return err
+		}
+
+		// Delete the PlanServiceCostShares
+		err = ps.repo.Delete(c, linkedPlanService.PlanServiceCostShares.ObjectId)
+		if err != nil {
+			log.Printf("Error deleting the PlanServiceCostShares from the redis : %v", err)
+			return err
+		}
 	}
 
 	return nil
@@ -180,6 +220,24 @@ func (ps *PlansService) PatchPlan(c *gin.Context, key string, plan models.Plan) 
 	// Update the plan in the database
 	err = ps.repo.Set(c, key, string(value))
 	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ps *PlansService) UpdatePlan(c *gin.Context, objectId string, plan models.Plan) error {
+	// Delete the existing plan and all its associated objects
+	err := ps.DeletePlan(c, objectId)
+	if err != nil {
+		log.Printf("Failed to delete existing plan with error : %v", err.Error())
+		return err
+	}
+
+	// Create a new plan with the new request body
+	err = ps.CreatePlan(c, plan)
+	if err != nil {
+		log.Printf("Failed to create new plan with error : %v", err.Error())
 		return err
 	}
 

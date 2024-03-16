@@ -19,6 +19,7 @@ type Handler interface {
 	GetAllPlans(c *gin.Context)
 	DeletePlan(c *gin.Context)
 	PatchPlan(c *gin.Context)
+	UpdatePlan(c *gin.Context)
 }
 
 type PlansHandler struct {
@@ -164,4 +165,45 @@ func generateETag(plan models.Plan) string {
 	sha1Hash := hex.EncodeToString(h.Sum(nil))
 
 	return sha1Hash
+}
+
+func (ph *PlansHandler) UpdatePlan(c *gin.Context) {
+	var planRequest models.Plan
+	err := c.ShouldBindBodyWith(&planRequest, binding.JSON)
+	if err != nil {
+		log.Printf("Bad Request with error : %v", err.Error())
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	existingPlan, err := ph.service.GetPlan(c, planRequest.ObjectId)
+	if err != nil || existingPlan.ObjectId == "" {
+		// If the plan does not exist, create a new one
+		err = ph.service.CreatePlan(c, planRequest)
+		if err != nil {
+			log.Printf("Failed to create plan with error : %v", err.Error())
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "Plan created successfully"})
+		return
+	}
+
+	// If the ETag of the existing plan and the request are the same, return a 304 status
+	requestETag := generateETag(planRequest)
+	existingETag := generateETag(existingPlan)
+	if requestETag == existingETag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	err = ph.service.UpdatePlan(c, planRequest.ObjectId, planRequest)
+	if err != nil {
+		log.Printf("Failed to update plan with error : %v", err.Error())
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Plan updated successfully"})
+	return
 }
