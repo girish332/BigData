@@ -70,7 +70,7 @@ func (ph *PlansHandler) GetPlan(c *gin.Context) {
 	}
 	clientEtag := strings.TrimSpace(c.GetHeader("If-None-Match"))
 
-	plan, err := ph.service.GetPlan(c, objectId)
+	plan, err := ph.service.GetAnyObject(c, objectId)
 	if err != nil {
 		log.Printf("Failed to fetch plan with err : %v", err.Error())
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -154,7 +154,7 @@ func (ph *PlansHandler) PatchPlan(c *gin.Context) {
 	return
 }
 
-func generateETag(plan models.Plan) string {
+func generateETag(plan interface{}) string {
 	h := sha1.New()
 	dataBytes, err := json.Marshal(plan)
 	if err != nil {

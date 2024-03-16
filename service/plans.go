@@ -19,12 +19,62 @@ func NewPlansService(repo repository.RedisRepo) *PlansService {
 }
 
 type Service interface {
+	GetAnyObject(c *gin.Context, key string) (interface{}, error)
 	GetPlan(c *gin.Context, key string) (models.Plan, error)
 	CreatePlan(c *gin.Context, plan models.Plan) error
 	DeletePlan(c *gin.Context, objectId string) error
 	GetAllPlans(ctx *gin.Context) ([]models.Plan, error)
 	PatchPlan(c *gin.Context, key string, plan models.Plan) error
 	UpdatePlan(c *gin.Context, objectId string, plan models.Plan) error
+}
+
+func (ps *PlansService) GetAnyObject(c *gin.Context, key string) (interface{}, error) {
+	value, err := ps.repo.Get(c, key)
+	if err != nil {
+		log.Printf("Error getting the plan from the redis : %v", err)
+		return nil, err
+	}
+
+	var plan models.Plan
+	err = json.Unmarshal([]byte(value), &plan)
+	if err != nil {
+		log.Printf("Error unmarshalling the plan from the redis : %v", err)
+		return nil, err
+	}
+
+	// Check the ObjectType and return the corresponding struct
+	switch plan.ObjectType {
+	case "membercostshare":
+		var pcs models.PlanCostShares
+		err = json.Unmarshal([]byte(value), &pcs)
+		if err != nil {
+			return nil, err
+		}
+		return pcs, nil
+	case "service":
+		var ls models.LinkedService
+		err = json.Unmarshal([]byte(value), &ls)
+		if err != nil {
+			return nil, err
+		}
+		return ls, nil
+	case "PlanServiceCostShares":
+		var pscs models.PlanServiceCostShares
+		err = json.Unmarshal([]byte(value), &pscs)
+		if err != nil {
+			return nil, err
+		}
+		return pscs, nil
+	case "planservice":
+		var lps models.LinkedPlanService
+		err = json.Unmarshal([]byte(value), &lps)
+		if err != nil {
+			return nil, err
+		}
+		return lps, nil
+	default:
+		return plan, nil
+	}
 }
 
 func (ps *PlansService) GetPlan(c *gin.Context, key string) (models.Plan, error) {
