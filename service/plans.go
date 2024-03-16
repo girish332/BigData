@@ -191,7 +191,7 @@ func (ps *PlansService) DeletePlan(c *gin.Context, objectId string) error {
 		err = ps.repo.Delete(c, linkedPlanService.ObjectId)
 		if err != nil {
 			log.Printf("Error deleting the LinkedPlanService from the redis : %v", err)
-			return err
+			//return err
 		}
 
 		// Delete the LinkedService
@@ -241,24 +241,29 @@ func (ps *PlansService) GetAllPlans(ctx *gin.Context) ([]models.Plan, error) {
 	return plans, nil
 }
 
-func (ps *PlansService) PatchPlan(c *gin.Context, key string, plan models.Plan) error {
+func (ps *PlansService) PatchPlan(c *gin.Context, key string, newPlan models.Plan) error {
 	existingPlan, err := ps.GetPlan(c, key)
 	if err != nil || existingPlan.ObjectId == "" {
 		return err
 	}
 
-	// If there are new linkedPlanServices, check their objectId and append if they are not in the existing ones
-	for _, newLinkedPlanService := range plan.LinkedPlanServices {
-		exists := false
-		for _, existingLinkedPlanService := range existingPlan.LinkedPlanServices {
-			if newLinkedPlanService.ObjectId == existingLinkedPlanService.ObjectId {
-				exists = true
-				break
-			}
+	// Create a map of new LinkedPlanServices for easy lookup
+	newLinkedPlanServices := make(map[string]models.LinkedPlanService)
+	for _, newLinkedPlanService := range newPlan.LinkedPlanServices {
+		newLinkedPlanServices[newLinkedPlanService.ObjectId] = newLinkedPlanService
+	}
+
+	// Update existing LinkedPlanServices if they are in the newLinkedPlanServices map
+	for i, existingLinkedPlanService := range existingPlan.LinkedPlanServices {
+		if newLinkedPlanService, ok := newLinkedPlanServices[existingLinkedPlanService.ObjectId]; ok {
+			existingPlan.LinkedPlanServices[i] = newLinkedPlanService
+			delete(newLinkedPlanServices, existingLinkedPlanService.ObjectId)
 		}
-		if !exists {
-			existingPlan.LinkedPlanServices = append(existingPlan.LinkedPlanServices, newLinkedPlanService)
-		}
+	}
+
+	// Append any remaining new LinkedPlanServices that were not in the existing plan
+	for _, newLinkedPlanService := range newLinkedPlanServices {
+		existingPlan.LinkedPlanServices = append(existingPlan.LinkedPlanServices, newLinkedPlanService)
 	}
 
 	// Marshal the updated plan into a string
