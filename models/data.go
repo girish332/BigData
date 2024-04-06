@@ -1,5 +1,10 @@
 package models
 
+type SearchRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type PlanCostShares struct {
 	Deductible int    `json:"deductible" binding:"required"`
 	Copay      int    `json:"copay" binding:"required"`

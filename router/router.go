@@ -1,12 +1,13 @@
 package router
 
 import (
-	"BigData/database"
-	"BigData/handler"
-	"BigData/middleware"
-	"BigData/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/girish332/bigdata/database"
+	"github.com/girish332/bigdata/elastic"
+	"github.com/girish332/bigdata/handler"
+	"github.com/girish332/bigdata/middleware"
+	"github.com/girish332/bigdata/service"
 )
 
 func InitializeRouter() *gin.Engine {
@@ -16,7 +17,8 @@ func InitializeRouter() *gin.Engine {
 
 	redisRepo := database.NewRedisRepo("localhost:6379", "")
 	planService := service.NewPlansService(redisRepo)
-	planHandler := handler.NewPlansHandler(planService)
+	esFactory := elastic.NewElasticFactory()
+	planHandler := handler.NewPlansHandler(planService, esFactory)
 
 	v1 := router.Group("/v1", middleware.OAuth2Middleware())
 	{
@@ -26,6 +28,7 @@ func InitializeRouter() *gin.Engine {
 		v1.GET("/plans", planHandler.GetAllPlans)
 		v1.PATCH("/plan/:objectId", planHandler.PatchPlan)
 		v1.PUT("/plan", planHandler.UpdatePlan)
+		v1.POST("/search", planHandler.SearchPlans)
 	}
 
 	return router

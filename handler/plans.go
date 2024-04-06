@@ -1,13 +1,18 @@
 package handler
 
 import (
-	"BigData/models"
-	"BigData/service"
+	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/girish332/bigdata/elastic"
+	"github.com/girish332/bigdata/models"
+	"github.com/girish332/bigdata/service"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"strings"
@@ -20,15 +25,18 @@ type Handler interface {
 	DeletePlan(c *gin.Context)
 	PatchPlan(c *gin.Context)
 	UpdatePlan(c *gin.Context)
+	SearchPlans(c *gin.Context)
 }
 
 type PlansHandler struct {
-	service *service.PlansService
+	service   *service.PlansService
+	esFactory *elastic.Factory
 }
 
-func NewPlansHandler(planService *service.PlansService) *PlansHandler {
+func NewPlansHandler(planService *service.PlansService, esFactory *elastic.Factory) *PlansHandler {
 	return &PlansHandler{
-		service: planService,
+		service:   planService,
+		esFactory: esFactory,
 	}
 }
 
@@ -129,6 +137,12 @@ func (ph *PlansHandler) PatchPlan(c *gin.Context) {
 		return
 	}
 
+	clientEtag := strings.TrimSpace(c.GetHeader("If-None-Match"))
+	if clientEtag == "" {
+		c.AbortWithStatus(http.StatusPreconditionFailed)
+		return
+	}
+
 	var planRequest models.Plan
 	err := c.ShouldBindBodyWith(&planRequest, binding.JSON)
 	if err != nil {
@@ -147,6 +161,12 @@ func (ph *PlansHandler) PatchPlan(c *gin.Context) {
 	if err != nil {
 		log.Printf("Failed to update plan with error : %v", err.Error())
 		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	currentEtag := generateETag(planRequest)
+	if clientEtag == currentEtag {
+		c.Status(http.StatusNotModified)
 		return
 	}
 
@@ -206,4 +226,65 @@ func (ph *PlansHandler) UpdatePlan(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plan updated successfully"})
 	return
+}
+
+func (h *PlansHandler) SearchPlans(c *gin.Context) {
+	var req models.SearchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create a match query
+	matchQuery := map[string]interface{}{
+		"query": map[string]interface{}{
+			"match": map[string]interface{}{
+				req.Key: req.Value,
+			},
+		},
+	}
+	queryBytes, err := json.Marshal(matchQuery)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create a new search request
+	searchReq := esapi.SearchRequest{
+		Index: []string{"plans"},
+		Body:  bytes.NewReader(queryBytes),
+	}
+
+	// Create a new Elasticsearch client
+	cfg := elasticsearch.Config{
+		Addresses: []string{
+			"http://localhost:9200", // replace with your Elasticsearch address
+		},
+	}
+	client, err := h.esFactory.NewClient(cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Perform the search request.
+	res, err := searchReq.Do(context.Background(), client.ES)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": res.String()})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

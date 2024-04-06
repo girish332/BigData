@@ -1,7 +1,7 @@
 package main
 
 import (
-	routerPkg "BigData/router"
+	routerPkg "github.com/girish332/bigdata/router"
 	"log"
 )
 

@@ -1,11 +1,18 @@
 package service
 
 import (
-	"BigData/models"
-	"BigData/repository"
+	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/gin-gonic/gin"
+	"github.com/girish332/bigdata/models"
+	"github.com/girish332/bigdata/rabbitmq"
+	"github.com/girish332/bigdata/repository"
 	log "github.com/sirupsen/logrus"
+	"github.com/streadway/amqp"
+	"strings"
 )
 
 type PlansService struct {
@@ -95,6 +102,36 @@ func (ps *PlansService) GetPlan(c *gin.Context, key string) (models.Plan, error)
 }
 
 func (ps *PlansService) CreatePlan(c *gin.Context, plan models.Plan) error {
+	rmq := &rabbitmq.Factory{}
+
+	conn, err := rmq.NewConnection()
+	if err != nil {
+		log.Errorf("Error creating new connection : %v", err)
+		return err
+	}
+	defer conn.Close()
+
+	ch, err := rmq.NewChannel(conn)
+	if err != nil {
+		log.Errorf("Error creating new channel : %v", err)
+		return err
+	}
+	defer ch.Close()
+
+	// Declare a queue
+	queue, err := ch.QueueDeclare(
+		"plan_queue", // name
+		false,        // durable
+		true,         // delete when unused
+		false,        // exclusive
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		log.Fatalf("Failed to declare a queue: %v", err)
+		return err
+	}
+
 	// Add Code to marshal the struct into a string and set it in the redis
 	objectId := plan.ObjectId
 
@@ -107,6 +144,21 @@ func (ps *PlansService) CreatePlan(c *gin.Context, plan models.Plan) error {
 	err = ps.repo.Set(c, objectId, string(value))
 	if err != nil {
 		log.Printf("Error setting the plan in the redis : %v", err)
+		return err
+	}
+
+	// Publish the plan onto the queue
+	err = ch.Publish(
+		"",         // exchange
+		queue.Name, // routing key
+		false,      // mandatory
+		false,      // immediate
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        value,
+		})
+	if err != nil {
+		log.Fatalf("Failed to publish a message: %v", err)
 		return err
 	}
 
@@ -276,6 +328,36 @@ func (ps *PlansService) PatchPlan(c *gin.Context, key string, newPlan models.Pla
 	err = ps.repo.Set(c, key, string(value))
 	if err != nil {
 		return err
+	}
+
+	// Create a new Elasticsearch client
+	cfg := elasticsearch.Config{
+		Addresses: []string{
+			"http://localhost:9200", // replace with your Elasticsearch address
+		},
+	}
+	client, err := elasticsearch.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Create an UpdateRequest for Elasticsearch
+	updateReq := esapi.UpdateRequest{
+		Index:      "plans",
+		DocumentID: key,
+		Body:       strings.NewReader(string(value)),
+		Refresh:    "true",
+	}
+
+	// Send the UpdateRequest to Elasticsearch
+	res, err := updateReq.Do(context.Background(), client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("Error updating document ID=%s", key)
 	}
 
 	return nil
