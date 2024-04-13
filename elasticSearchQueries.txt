@@ -1,0 +1,100 @@
+# Click the Variables button, above, to create your own variables.
+GET ${exampleVariable1} // _search
+{
+  "query": {
+    "${exampleVariable2}": {} // match_all
+  }
+}
+
+
+
+DELETE /plans 
+
+GET /plans/_mapping
+
+
+GET /plans/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+
+
+GET /plans/_search
+{
+  "query": {
+    "has_child": {
+      "type": "linkedPlanServices",
+      "query": {
+        "match_all": {}
+      }
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "has_parent": {
+      "parent_type": "plan",
+      "query": {
+        "match": {
+          "planType": "inNetwork"
+        }
+      }
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "has_child": {
+      "type": "planserviceCostShares",
+      "query": {
+        "range": {
+          "copay": {
+            "gte": 1
+          }
+        }
+      }
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "match": {
+      "objectType": "membercostshare"
+    }
+  }
+}
+
+
+GET /plans/_search
+{
+  "query": {
+    "match": {
+      "objectId": "27283xvx9asdff-504"
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "has_parent": {
+      "parent_type": "linkedPlanServices",
+      "query": {
+        "match": {
+          "objectId": "27283xvx9asdff-504"
+        }
+      }
+    }
+  }
+}
+
+
