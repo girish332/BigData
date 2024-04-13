@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -327,29 +328,31 @@ func (ps *PlansService) PatchPlan(c *gin.Context, key string, newPlan models.Pla
 	// Update the plan in the database
 	err = ps.repo.Set(c, key, string(value))
 	if err != nil {
+		log.Errorf("Error updating the plan in the redis : %v", err)
 		return err
 	}
 
 	// Create a new Elasticsearch client
 	cfg := elasticsearch.Config{
 		Addresses: []string{
-			"http://localhost:9200", // replace with your Elasticsearch address
+			"http://localhost:9200",
 		},
 	}
 	client, err := elasticsearch.NewClient(cfg)
 	if err != nil {
+		log.Errorf("Error creating the client: %s", err)
 		return err
 	}
 
 	// Create an UpdateRequest for Elasticsearch
-	updateReq := esapi.UpdateRequest{
+	updateReq := esapi.IndexRequest{
 		Index:      "plans",
 		DocumentID: key,
 		Body:       strings.NewReader(string(value)),
 		Refresh:    "true",
 	}
 
-	// Send the UpdateRequest to Elasticsearch
+	// Send the Entire Plan Object to Re Index
 	res, err := updateReq.Do(context.Background(), client)
 	if err != nil {
 		return err
@@ -357,7 +360,113 @@ func (ps *PlansService) PatchPlan(c *gin.Context, key string, newPlan models.Pla
 	defer res.Body.Close()
 
 	if res.IsError() {
+		log.Println(res.String())
 		return fmt.Errorf("Error updating document ID=%s", key)
+	}
+
+	existingPlan.PlanJoin = map[string]interface{}{
+		"name": "plan",
+	}
+
+	existingPlan.PlanCostShares.PlanJoin = map[string]interface{}{
+		"name":   "plancostshares",
+		"parent": existingPlan.ObjectId,
+	}
+
+	planCostShareJSON, err := json.Marshal(existingPlan.PlanCostShares)
+	if err != nil {
+		log.Errorf("Failed to index planCostShare with err : %v", err)
+	}
+
+	req := esapi.IndexRequest{
+		Index:      "plans",
+		DocumentID: existingPlan.PlanCostShares.ObjectId,
+		Body:       bytes.NewReader(planCostShareJSON),
+		Refresh:    "true",
+		Routing:    existingPlan.ObjectId,
+	}
+
+	res, err = req.Do(context.Background(), client)
+	if err != nil {
+		log.Errorf("Failed to index planCostShare with err : %v", err)
+	}
+
+	for _, linkedPlanService := range existingPlan.LinkedPlanServices {
+
+		// Reindex the linkedPlanService and its associated objects
+		linkedPlanService.PlanJoin = map[string]interface{}{
+			"name":   "linkedPlanServices",
+			"parent": existingPlan.ObjectId,
+		}
+
+		linkedPlanServiceJSON, err := json.Marshal(linkedPlanService)
+		if err != nil {
+			log.Errorf("Failed to index linkedPlanService with err : %v", err)
+		}
+
+		req := esapi.IndexRequest{
+			Index:      "plans",
+			DocumentID: linkedPlanService.ObjectId,
+			Body:       bytes.NewReader(linkedPlanServiceJSON),
+			Refresh:    "true",
+			Routing:    existingPlan.ObjectId,
+		}
+
+		res, err = req.Do(context.Background(), client)
+		if err != nil {
+			log.Errorf("Failed to index linkedPlanService with err : %v", err)
+		}
+		defer res.Body.Close()
+
+		// Reindex the linkedService and planServiceCostShares objects
+		linkedPlanService.LinkedService.PlanJoin = map[string]interface{}{
+			"name":   "linkedService",
+			"parent": linkedPlanService.ObjectId,
+		}
+
+		linkedServiceJSON, err := json.Marshal(linkedPlanService.LinkedService)
+		if err != nil {
+			log.Errorf("Failed to index linkedService with err : %v", err)
+		}
+
+		req = esapi.IndexRequest{
+			Index:      "plans",
+			DocumentID: linkedPlanService.LinkedService.ObjectId,
+			Body:       bytes.NewReader(linkedServiceJSON),
+			Refresh:    "true",
+			Routing:    linkedPlanService.ObjectId,
+		}
+
+		res, err = req.Do(context.Background(), client)
+		if err != nil {
+			log.Errorf("Failed to index linkedService with err : %v", err)
+		}
+		defer res.Body.Close()
+
+		// Reindex the planServiceCostShares object
+		linkedPlanService.PlanServiceCostShares.PlanJoin = map[string]interface{}{
+			"name":   "planserviceCostShares",
+			"parent": linkedPlanService.ObjectId,
+		}
+
+		planServiceCostSharesJSON, err := json.Marshal(linkedPlanService.PlanServiceCostShares)
+		if err != nil {
+			log.Errorf("Failed to index planServiceCostShares with err : %v", err)
+		}
+
+		req = esapi.IndexRequest{
+			Index:      "plans",
+			DocumentID: linkedPlanService.PlanServiceCostShares.ObjectId,
+			Body:       bytes.NewReader(planServiceCostSharesJSON),
+			Refresh:    "true",
+			Routing:    linkedPlanService.ObjectId,
+		}
+
+		res, err = req.Do(context.Background(), client)
+		if err != nil {
+			log.Errorf("Failed to index planServiceCostShares with err : %v", err)
+		}
+		defer res.Body.Close()
 	}
 
 	return nil
